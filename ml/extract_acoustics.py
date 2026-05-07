@@ -2,64 +2,91 @@ import librosa
 import numpy as np
 import json
 import os
+import subprocess
+import tempfile
+
+
+def _convert_to_wav(audio_path: str) -> str:
+    wav_path = audio_path.rsplit(".", 1)[0] + "_converted.wav"
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", wav_path],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+    )
+    return wav_path
 
 
 def extract_acoustics(audio_path: str, hop_duration: float = 0.5) -> list:
     print(f"Loading audio: {audio_path}", flush=True)
 
-    y, sr = librosa.load(audio_path, sr=None, mono=True)
+    wav_path = None
+    ext = os.path.splitext(audio_path)[1].lower()
+    if ext != ".wav":
+        print("Converting to WAV via ffmpeg...", flush=True)
+        wav_path = _convert_to_wav(audio_path)
+        load_path = wav_path
+    else:
+        load_path = audio_path
 
-    total_duration = librosa.get_duration(y=y, sr=sr)
-    hop_length = int(sr * hop_duration)
+    try:
+        y, sr = librosa.load(load_path, sr=None, mono=True)
 
-    print(f"Sample Rate: {sr}Hz | Duration: {total_duration:.2f}s", flush=True)
+        total_duration = librosa.get_duration(y=y, sr=sr)
+        hop_length = int(sr * hop_duration)
 
-    features = []
-    num_windows = int(np.ceil(total_duration / hop_duration))
+        print(f"Sample Rate: {sr}Hz | Duration: {total_duration:.2f}s", flush=True)
 
-    for i in range(num_windows):
-        start_sample = i * hop_length
-        end_sample = min(start_sample + hop_length, len(y))
-        window = y[start_sample:end_sample]
+        features = []
+        num_windows = int(np.ceil(total_duration / hop_duration))
 
-        t_start = round(i * hop_duration, 3)
-        t_end = round(min((i + 1) * hop_duration, total_duration), 3)
+        for i in range(num_windows):
+            start_sample = i * hop_length
+            end_sample = min(start_sample + hop_length, len(y))
+            window = y[start_sample:end_sample]
 
-        rms = float(np.sqrt(np.mean(window ** 2)))
+            t_start = round(i * hop_duration, 3)
+            t_end = round(min((i + 1) * hop_duration, total_duration), 3)
 
-        f0, voiced_flag, _ = librosa.pyin(
-            window,
-            fmin=librosa.note_to_hz('C2'),
-            fmax=librosa.note_to_hz('C7'),
-            sr=sr
-        )
-        voiced_f0 = f0[voiced_flag] if f0 is not None else np.array([])
-        mean_pitch = float(np.mean(voiced_f0)) if len(voiced_f0) > 0 else 0.0
-        pitch_variance = float(np.var(voiced_f0)) if len(voiced_f0) > 0 else 0.0
+            rms = float(np.sqrt(np.mean(window ** 2)))
 
-        if len(window) > 0:
-            mfccs = librosa.feature.mfcc(y=window, sr=sr, n_mfcc=13)
-            mfcc_means = mfccs.mean(axis=1).tolist()
-        else:
-            mfcc_means = [0.0] * 13
+            f0, voiced_flag, _ = librosa.pyin(
+                window,
+                fmin=librosa.note_to_hz('C2'),
+                fmax=librosa.note_to_hz('C7'),
+                sr=sr
+            )
+            voiced_f0 = f0[voiced_flag] if f0 is not None else np.array([])
+            mean_pitch = float(np.mean(voiced_f0)) if len(voiced_f0) > 0 else 0.0
+            pitch_variance = float(np.var(voiced_f0)) if len(voiced_f0) > 0 else 0.0
 
-        is_pause = rms < 0.01
+            if len(window) > 0:
+                mfccs = librosa.feature.mfcc(y=window, sr=sr, n_mfcc=13)
+                mfcc_means = mfccs.mean(axis=1).tolist()
+            else:
+                mfcc_means = [0.0] * 13
 
-        features.append({
-            "window_start": t_start,
-            "window_end": t_end,
-            "rms_energy": round(rms, 6),
-            "mean_pitch_hz": round(mean_pitch, 3),
-            "pitch_variance": round(pitch_variance, 3),
-            "mfcc_means": [round(v, 4) for v in mfcc_means],
-            "is_pause": is_pause
-        })
+            is_pause = rms < 0.01
 
-        if i % 20 == 0:
-            print(f"  Processed window {i+1}/{num_windows} ({t_start:.1f}s)", flush=True)
+            features.append({
+                "window_start": t_start,
+                "window_end": t_end,
+                "rms_energy": round(rms, 6),
+                "mean_pitch_hz": round(mean_pitch, 3),
+                "pitch_variance": round(pitch_variance, 3),
+                "mfcc_means": [round(v, 4) for v in mfcc_means],
+                "is_pause": is_pause
+            })
 
-    print(f"Acoustic extraction complete. {len(features)} windows.", flush=True)
-    return features
+            if i % 20 == 0:
+                print(f"  Processed window {i+1}/{num_windows} ({t_start:.1f}s)", flush=True)
+
+        print(f"Acoustic extraction complete. {len(features)} windows.", flush=True)
+        return features
+
+    finally:
+        if wav_path and os.path.exists(wav_path):
+            os.remove(wav_path)
 
 
 if __name__ == "__main__":

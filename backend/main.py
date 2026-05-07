@@ -163,3 +163,8 @@ async def get_analysis(analysis_id: str):
 
     doc["_id"] = str(doc["_id"])
     return doc
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
