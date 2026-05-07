@@ -2,18 +2,25 @@ import librosa
 import numpy as np
 import json
 import os
-import subprocess
-import tempfile
+import av
+import soundfile as sf
 
 
 def _convert_to_wav(audio_path: str) -> str:
     wav_path = audio_path.rsplit(".", 1)[0] + "_converted.wav"
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", wav_path],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=True,
-    )
+    container = av.open(audio_path)
+    stream = container.streams.audio[0]
+    frames = []
+    for frame in container.decode(stream):
+        frame_np = frame.to_ndarray()
+        if frame_np.ndim > 1:
+            frame_np = frame_np.mean(axis=0)
+        frames.append(frame_np)
+    container.close()
+    audio_data = np.concatenate(frames).astype(np.float32)
+    if audio_data.max() > 1.0:
+        audio_data = audio_data / 32768.0
+    sf.write(wav_path, audio_data, stream.rate)
     return wav_path
 
 
