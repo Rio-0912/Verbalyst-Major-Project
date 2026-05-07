@@ -14,24 +14,23 @@ echo "===================================="
 echo "JOB START: $(date)"
 echo "===================================="
 
-# --- 1. Environment Setup ---
 module load python/3.11.14
 module load ffmpeg 2>/dev/null || true
 
 echo "Setting up virtual environment..."
 if [ ! -d "env" ]; then
-    uv venv env
+    python3 -m venv env
 fi
 source env/bin/activate
 
-echo "Installing dependencies from req.txt..."
-uv pip install -r req.txt
-uv pip install --force-reinstall --no-deps fastapi starlette
+echo "Upgrading pip..."
+pip install --upgrade pip
 
-# --- 2. Library Path Fix ---
+echo "Installing dependencies from req.txt..."
+pip install -r req.txt
+
 export LD_LIBRARY_PATH=$VIRTUAL_ENV/lib:$LD_LIBRARY_PATH
 
-# --- 3. Pre-flight Check ---
 if [ ! -f "./audio.mp3" ]; then
     echo "WARNING: ./audio.mp3 not found. Server will still start — send audio via POST /audio."
 fi
