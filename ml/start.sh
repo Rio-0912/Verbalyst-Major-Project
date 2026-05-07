@@ -16,6 +16,7 @@ echo "===================================="
 
 # --- 1. Environment Setup ---
 module load python/3.11.14
+module load ffmpeg 2>/dev/null || true
 
 echo "Setting up virtual environment..."
 if [ ! -d "env" ]; then
@@ -25,6 +26,7 @@ source env/bin/activate
 
 echo "Installing dependencies from req.txt..."
 uv pip install -r req.txt
+uv pip install --force-reinstall --no-deps fastapi starlette
 
 # --- 2. Library Path Fix ---
 export LD_LIBRARY_PATH=$VIRTUAL_ENV/lib:$LD_LIBRARY_PATH
